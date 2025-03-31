@@ -1,0 +1,3 @@
+model/generated_data/best_model_test.pth.tar
+model/generated_data/checkpoint_test.pth
+model/generated_data/loss_history_test.pkl
