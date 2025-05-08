@@ -12,7 +12,7 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 
 import numpy as np
 
-#Utilidade separada de main.py, rode esse script para avaliar o modelo treinado
+# Utilidade separada de main.py, rode esse script para avaliar o modelo treinado
 
 from dataset.frame_dataset import FrameDataset
 from model.layers import SCAN_EncDec
@@ -29,11 +29,11 @@ def calculate_psnr(img1, img2, max_val=1.0):
 
 def main():
     parser = argparse.ArgumentParser(description="Avaliação do modelo de interpolação: cálculo de SSIM e PSNR")
-    parser.add_argument("--vimeo_dir", type=str, default="D:\\vimeo_triplet",
+    parser.add_argument("--vimeo_dir", type=str, default="C:\\Users\\Felip\\vimeo_triplet",
                         help="Diretório root do Vimeo (contendo 'sequences', 'tri_trainlist.txt' e 'tri_testlist.txt')")
     parser.add_argument("--batch_size", type=int, default=16, help="Tamanho do batch para avaliação")
     parser.add_argument("--best_model", type=str, default="model\\generated_data\\best_model_test.pth.tar", 
-                        help="Caminho para o best model salvo (gerado pelo código 2)")
+                        help="Caminho para o best model salvo (gerado pelo código de treinamento)")
     parser.add_argument("--test_list", type=str, default="tri_testlist.txt", 
                         help="Arquivo de lista de teste (ex.: tri_testlist.txt)")
     args = parser.parse_args()
@@ -41,7 +41,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[Info] Usando dispositivo: {device}")
 
-    #lista de triplas de teste
+    # Lista de triplas de teste
     test_list_path = os.path.join(args.vimeo_dir, args.test_list)
     if not os.path.isfile(test_list_path):
         print(f"[Erro] Arquivo {test_list_path} não encontrado!")
@@ -62,13 +62,17 @@ def main():
 
     best_model = torch.load(args.best_model, map_location=device)
     if "model_state_dict" in best_model:
-        model.load_state_dict(best_model["model_state_dict"])
+        state_dict = best_model["model_state_dict"]
     else:
-        model.load_state_dict(best_model)
+        state_dict = best_model
 
+    model.load_state_dict(state_dict)
+
+    #model = torch.compile(model)
     model.eval()
     print("[Info] Best model de interpolação carregado.")
 
+    # Inicializa a métrica SSIM; lembre-se: data_range=1.0 pois estaremos trabalhando com imagens em [0,1]
     ssim_metric = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
 
     total_psnr = 0.0
@@ -88,14 +92,15 @@ def main():
                 output = F.interpolate(output, size=gt_frame.shape[2:], 
                                        mode='bilinear', align_corners=True)
             
-            # Para cada amostra no batch, calcular PSNR e SSIM
-            for i in range(output.size(0)):
-                out_img = output[i].unsqueeze(0)  # shape [1,3,H,W]
-                gt_img = gt_frame[i].unsqueeze(0)
-                psnr_val = calculate_psnr(out_img, gt_img, max_val=1.0)
+            # Converter de [-1,1] para [0,1] antes do cálculo das métricas
+            output_norm = (output + 1.0) / 2.0
+            gt_norm = (gt_frame + 1.0) / 2.0
 
-                # SSIM
-                # ssim_metric espera [B, C, H, W] e 'data_range=1.0' 
+            # Para cada amostra no batch, calcular PSNR e SSIM
+            for i in range(output_norm.size(0)):
+                out_img = output_norm[i].unsqueeze(0)  # shape [1,3,H,W]
+                gt_img = gt_norm[i].unsqueeze(0)
+                psnr_val = calculate_psnr(out_img, gt_img, max_val=1.0)
                 ssim_val = ssim_metric(out_img, gt_img).item()
 
                 total_psnr += psnr_val

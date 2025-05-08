@@ -27,7 +27,7 @@ class ConvNorm(nn.Module):
 
 class UpConvNorm(nn.Module):
     """
-    Upsample feito como : 'shuffle', 'transpose' ou 'bilinear'.
+    Upsample feito como: 'shuffle', 'transpose' ou 'bilinear'.
     Agora usando nn.PixelShuffle no modo 'shuffle'.
     """
     def __init__(self, in_channels, out_channels, mode='shuffle', norm=False):
@@ -49,8 +49,7 @@ class UpConvNorm(nn.Module):
 
 class RCAB(nn.Module):
     """
-    Residual Channel Attention Block (RCAB),
-    agora incluindo SpatialAttention.
+    Residual Channel Attention Block (RCAB) com inclusão da SpatialAttention.
     """
     def __init__(self, in_feat, out_feat, kernel_size, reduction, bias=True,
                  norm=False, act=nn.ReLU(True), downscale=False, return_ca=False):
@@ -88,7 +87,7 @@ class RCAB(nn.Module):
 
 class ResidualGroup(nn.Module):
     """
-    Grupo de n_resblocks, estilo RCAB
+    Grupo de n_resblocks, utilizando RCAB.
     """
     def __init__(self, Block, n_resblocks, n_feat, kernel_size, reduction, act, norm=False):
         super(ResidualGroup, self).__init__()
@@ -107,7 +106,7 @@ class ResidualGroup(nn.Module):
 
 class Interpolation(nn.Module):
     """
-    Interpolação: une feats do par (f1,f3), passa por n_resgroups.
+    Une as features de dois frames (ex. f1 e f3) e as refina com grupos residuais.
     """
     def __init__(self, n_resgroups, n_resblocks, n_feats,
                  reduction=16, act=nn.LeakyReLU(0.2, True), norm=False):
@@ -134,9 +133,8 @@ class Interpolation(nn.Module):
 
 class Encoder(nn.Module):
     """
-    Encoder original do SCAN_EncDec:
-     - 3 -> 32 -> 64 -> 128 -> 192
-     - Bloco Interpolation com 5 resgroups * 12 RCAB cada
+    Encoder do SCAN_EncDec:
+      - Processa os inputs para extrair features e realiza a interpolação.
     """
     def __init__(self, in_channels=3, nf_start=32, norm=False):
         super(Encoder, self).__init__()
@@ -167,9 +165,8 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     """
-    Decoder original do SCAN_EncDec:
-    - 192 -> 128 -> 64 -> 32 -> 3
-    - 3 UpConvNorm + Conv final
+    Decoder do SCAN_EncDec:
+      - Realiza upsampling em sequência para reconstruir a imagem.
     """
     def __init__(self, in_channels=192, out_channels=3, norm=False, up_mode='shuffle'):
         super(Decoder, self).__init__()
@@ -189,15 +186,15 @@ class Decoder(nn.Module):
 
 class SCAN_EncDec(nn.Module):
     """
-    - Recebe input_6c => separa x1 (3 canais) + x2 (3 canais)
-    - Envia cada um ao encoder
-    - Interpola + Passa no decoder => saida 3 canais
+    Recebe um tensor de 6 canais (concatenação de dois frames com 3 canais cada),
+    separa em x1 e x2, envia-os ao encoder e, após interpolação e decodificação,
+    retorna a imagem interpolada com ajuste de padding para preservar a dimensionalidade.
     """
     def __init__(self, nf_start=32):
         super(SCAN_EncDec, self).__init__()
         self.encoder = Encoder(in_channels=3, nf_start=nf_start, norm=False)
         self.decoder = Decoder(
-            in_channels=nf_start*6,
+            in_channels=nf_start * 6,
             out_channels=3,
             norm=False,
             up_mode='shuffle'
@@ -206,13 +203,25 @@ class SCAN_EncDec(nn.Module):
     def forward(self, x):
         x1 = x[:, :3, ...]
         x2 = x[:, 3:, ...]
-        
-        #x1, m1 = sub_mean(x1)
-        #x2, m2 = sub_mean(x2)
+
+        # Se desejar aplicar subtração da média, descomente as próximas linhas:
+        # x1, m1 = sub_mean(x1)
+        # x2, m2 = sub_mean(x2)
+
+        if not self.training:
+            # Importa a função InOutPaddings do módulo common
+            from model.common import InOutPaddings
+            paddingInput, paddingOutput = InOutPaddings(x1)
+            x1 = paddingInput(x1)
+            x2 = paddingInput(x2)
 
         feats = self.encoder(x1, x2)
         out = self.decoder(feats)
-        
-        #out = out + (m1 + m2) / 2.0
-        
+
+        if not self.training:
+            out = paddingOutput(out)
+
+        # Se a subtração da média foi aplicada, re-adicione a média:
+        # out = out + (m1 + m2) / 2.0
+
         return out

@@ -14,6 +14,16 @@ class CharbonnierLoss(nn.Module):
         diff = x - y
         error = torch.sqrt(diff * diff + self.eps * self.eps)
         return torch.mean(error)
+    
+class L1Loss(nn.Module):
+    """
+    L1 Loss: erro absoluto médio entre x e y.
+    """
+    def __init__(self):
+        super(L1Loss, self).__init__()
+    
+    def forward(self, x, y):
+        return torch.mean(torch.abs(x - y))
 
 class MeanShift(nn.Conv2d):
     """
@@ -63,6 +73,9 @@ class VGG19FeatureExtractor(nn.Module):
         x_01 = torch.clamp(x_01, 0, 1)
         x_01 = self.sub_mean(x_01)
         return self.vgg(x_01)
+    
+    
+
 
 class PerceptualLoss(nn.Module):
     """

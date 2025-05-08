@@ -8,28 +8,27 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch import autocast, GradScaler
 import matplotlib.pyplot as plt
 
-from model.losses import PerceptualLoss, CharbonnierLoss
+from model.losses import PerceptualLoss, CharbonnierLoss, L1Loss
 from model.utils import tensor_to_image, resize_image_max_keep_ratio
 
 class Trainer:
     def __init__(self, model, device, lr=0.0001, alpha=1, gamma=0.01, beta=1):
         """
-        - lr=0.0001
-        - alpha => peso SSIM
-        - beta  => peso Charbonnier
-        - gamma => peso Perceptual
+        - lr: taxa de aprendizado.
+        - alpha: peso para o SSIM.
+        - beta: peso para o CharbonnierLoss.
+        - gamma: peso para a PerceptualLoss.
         """
         self.model = model
         self.device = device
         
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=1e-5)
         
+        # Inicializa o SSIM com data_range=1.0
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
-
         self.perceptual_loss = PerceptualLoss(conv_index='44').to(device)
-
         self.charbonnier_loss = CharbonnierLoss(eps=1e-3)
-
+        #self.charbonnier_loss = L1Loss().to(device)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -38,10 +37,13 @@ class Trainer:
         self.window_initialized = False
         
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=5,
-                                           threshold=1e-4, min_lr=3e-5, verbose=True)
+                                           threshold=1e-4, min_lr=0.00003, verbose=True)
 
     def ssim_loss(self, pred, target):
-        ssim_val = self.ssim(pred, target)
+        # Converte os tensores de [-1, 1] para [0, 1]
+        pred_norm = (pred + 1.0) / 2.0
+        target_norm = (target + 1.0) / 2.0
+        ssim_val = self.ssim(pred_norm, target_norm)
         return 1.0 - ssim_val
 
     def train_one_epoch(self, dataloader, epoch, epochs, show_window=True, display_step=1,
