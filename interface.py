@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
-        self.resize(900, 600)
+        self.resize(900, 750)
         self.setAcceptDrops(True)
 
         self.tabs = QTabWidget()
@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
         cfg = QWidget()
         layout = QVBoxLayout(cfg)
         layout.setSpacing(8)
+        layout.setContentsMargins(16, 32, 16, 24)
 
         # Seção modelo
         self.model_path = None
