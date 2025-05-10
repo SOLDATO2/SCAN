@@ -8,10 +8,18 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
     QSpinBox, QFileDialog, QTabWidget, QProgressBar, QHBoxLayout, QVBoxLayout, QMessageBox, QSlider
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl
+# from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt5.QtGui import QFont
+
+
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from subprocess import Popen
+import time
 
 # importa suas funções de interpolação
 import adicionar_it
@@ -116,84 +124,163 @@ class InterpolationThread(QThread):
         self.progress.emit(100)
         self.finished.emit(self.output_path, out_fps)
 
+class DraggableButton(QPushButton):
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():  # Verifica se o conteúdo arrastado é um arquivo
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            files = [u.toLocalFile() for u in event.mimeData().urls()]
+            if files:  # Se houver arquivos, use o primeiro
+                self.parent().model_path = files[0]  # Atualiza o caminho do modelo
+                filename = QFileInfo(files[0]).fileName()
+                self.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
         self.resize(900, 600)
+        self.setAcceptDrops(True)
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
         cfg = QWidget()
         layout = QVBoxLayout(cfg)
+        layout.setSpacing(8)
 
         # Seção modelo
-        h1 = QHBoxLayout()
-        h1.addWidget(QLabel("Modelo:"))
-        self.model_path = QLineEdit()
-        h1.addWidget(self.model_path)
-        btn1 = QPushButton("…")
-        btn1.clicked.connect(self.select_model)
-        h1.addWidget(btn1)
-        layout.addLayout(h1)
+        self.model_path = None
+        model_box = QVBoxLayout()
+        model_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        model_title = QLabel("Modelo")
+        model_title.setFont(QFont("Helvetica", 16, QFont.DemiBold))
+        # model_title.setMargin(4)
+        model_title.setStyleSheet("color: #434343;")
+        model_box.addWidget(model_title)
+
+
+        btn1 = DraggableButton("Arrastar ou clicar para selecionar modelo", self)
+        btn1.setMinimumHeight(80)
+        btn1.setMinimumWidth(300)
+        # btn1.setMaximumWidth(700)
+        btn1.clicked.connect(lambda: self.select_model(btn1))
+        btn1.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 8px;")
+        btn1.setFont(QFont("Helvetica", 12))
+        model_box.addWidget(btn1)
+
+        layout.addLayout(model_box)
 
         # Seção vídeo de entrada
-        h2 = QHBoxLayout()
-        h2.addWidget(QLabel("Vídeo:"))
-        self.video_path = QLineEdit()
-        h2.addWidget(self.video_path)
-        btn2 = QPushButton("…")
-        btn2.clicked.connect(self.select_video)
-        h2.addWidget(btn2)
-        layout.addLayout(h2)
+        self.video_path = None
+        video_box = QVBoxLayout()
+        video_box.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        video_box.setSpacing(8)
+
+        video_title = QLabel("Vídeo de Entrada")
+        video_title.setFont(QFont("Helvetica", 16, QFont.DemiBold))
+        video_title.setStyleSheet("color: #434343;")
+        video_box.addWidget(video_title)
+
+        btn2 = DraggableButton("Arrastar ou clicar para selecionar vídeo", self)
+        btn2.setMinimumHeight(80)
+        btn2.setMinimumWidth(300)
+        # btn2.setMaximumWidth(700)
+        btn2.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 8px;")
+        btn2.setFont(QFont("Helvetica", 12))
+        btn2.clicked.connect(lambda: self.select_video(btn2))
+        video_box.addWidget(btn2)
+        
 
         self.info_label = QLabel("Resolução: —    FPS: —")
-        layout.addWidget(self.info_label)
+        self.info_label.setFont(QFont("Helvetica", 12))
+        self.info_label.setStyleSheet("color: #434343;")
+        video_box.addWidget(self.info_label)
 
-        # Seção saída
-        h3 = QHBoxLayout()
-        h3.addWidget(QLabel("Saída:"))
-        self.output_path = QLineEdit()
-        h3.addWidget(self.output_path)
-        btn3 = QPushButton("…")
-        btn3.clicked.connect(self.select_output)
-        h3.addWidget(btn3)
-        layout.addLayout(h3)
-
-        # Taxa de interpolação
         h4 = QHBoxLayout()
-        h4.addWidget(QLabel("Taxa de Interpolação:"))
+        interpolation_label = QLabel("Taxa de Interpolação:")
+        interpolation_label.setFont(QFont("Helvetica", 12))
+        interpolation_label.setStyleSheet("color: #434343;")
+        h4.addWidget(interpolation_label)
         self.spin = QSpinBox()
         self.spin.setRange(2, 10)
         self.spin.setValue(2)
+        self.spin.setStyleSheet("padding: 8px; border-radius: 8px; border: 1px solid #ccc;")
+        self.spin.setFont(QFont("Helvetica", 12))
         h4.addWidget(self.spin)
-        layout.addLayout(h4)
+        video_box.addLayout(h4)
+
+        layout.addLayout(video_box)
+
+        # Seção saída
+        h3 = QVBoxLayout()
+        h3.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        h3label = QLabel("Caminho de Saída")
+        h3label.setFont(QFont("Helvetica", 16, QFont.DemiBold))
+        h3label.setStyleSheet("color: #434343;")
+        h3.addWidget(h3label)
+
+        h3_row = QHBoxLayout()
+        self.output_path = QLineEdit()
+        self.output_path.setPlaceholderText("Diretório")
+        self.output_path.setStyleSheet("padding: 8px; border-radius: 8px; border: 1px solid #ccc;")
+        self.output_path.setFont(QFont("Helvetica", 12))
+        h3_row.addWidget(self.output_path)
+
+        btn3 = QPushButton("Selecionar Diretório")
+        btn3.clicked.connect(self.select_output)
+        btn3.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 8px;")
+        btn3.setFont(QFont("Helvetica", 12))
+        h3_row.addWidget(btn3)
+
+        h3.addLayout(h3_row)
+        layout.addLayout(h3)
 
         # Botão iniciar e progresso
+        btn_interp_container = QHBoxLayout()
         self.btn_interp = QPushButton("Interpolar")
+        self.btn_interp.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 12px;")
+        self.btn_interp.setFont(QFont("Helvetica", 12))
+        self.btn_interp.setMinimumWidth(240)
         self.btn_interp.clicked.connect(self.start_interpolation)
-        layout.addWidget(self.btn_interp)
+        btn_interp_container.addWidget(self.btn_interp)
+        btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addLayout(btn_interp_container)
         self.progress = QProgressBar()
+        self.progress.setHidden(True)
         layout.addWidget(self.progress)
+        
 
         self.tabs.addTab(cfg, "Configurações")
 
-    def select_model(self):
+    def select_model(self, button):
         path, _ = QFileDialog.getOpenFileName(self, "Selecione o modelo", "", "Pytorch (*.pth *.tar)")
         if path:
-            self.model_path.setText(path)
+            self.model_path = path
+            filename = QFileInfo(path).fileName()
+            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
 
-    def select_video(self):
+    def select_video(self, button):
         path, _ = QFileDialog.getOpenFileName(self, "Selecione o vídeo", "", "Vídeos (*.mp4 *.avi *.mov)")
         if path:
-            self.video_path.setText(path)
+            self.video_path = path
             cap = cv2.VideoCapture(path)
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             cap.release()
             self.info_label.setText(f"Resolução: {w}×{h}    FPS: {fps:.2f}")
+            filename = QFileInfo(path).fileName()
+            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
 
     def select_output(self):
         path, _ = QFileDialog.getSaveFileName(self, "Salvar como", "interpolado.mp4", "Vídeo MP4 (*.mp4)")
@@ -201,7 +288,7 @@ class MainWindow(QMainWindow):
             self.output_path.setText(path)
 
     def start_interpolation(self):
-        if not os.path.isfile(self.model_path.text()) or not os.path.isfile(self.video_path.text()):
+        if not os.path.isfile(self.model_path) or not os.path.isfile(self.video_path):
             QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
             return
         if not self.output_path.text().strip():
@@ -210,14 +297,16 @@ class MainWindow(QMainWindow):
 
         self.btn_interp.setEnabled(False)
         self.thread = InterpolationThread(
-            self.model_path.text(),
-            self.video_path.text(),
+            self.model_path,
+            self.video_path,
             self.spin.value(),
             self.output_path.text().strip()
         )
         self.thread.progress.connect(self.progress.setValue)
         self.thread.finished.connect(self.on_finished)
         self.thread.start()
+
+        self.progress.setHidden(False)
 
     def on_finished(self, interpolated_path):
         if hasattr(self, 'thread'):
@@ -276,14 +365,62 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentWidget(result)
         self.btn_interp.setEnabled(True)
 
+    # def dragEnterEvent(self, event):
+    #     if event.mimeData().hasUrls():
+    #         event.accept()
+    #     else:
+    #         event.ignore()
+
+    # def dropEvent(self, event):
+    #     files = [u.toLocalFile() for u in event.mimeData().urls()]
+    #     for f in files:
+    #         print(f)
+
     def closeEvent(self, event):
         if hasattr(self, 'thread') and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait()
         super().closeEvent(event)
 
+
+class ReloadHandler(FileSystemEventHandler):
+    def __init__(self, script_path):
+        super().__init__()
+        self.script_path = script_path
+        self.process = None
+        self.start_app()
+
+    def start_app(self):
+        if self.process:
+            self.process.terminate()
+        self.process = Popen([sys.executable, self.script_path])
+
+    def on_modified(self, event):
+        if event.src_path.endswith("interface.py"):
+            print(f"Arquivo modificado: {event.src_path}. Reiniciando...")
+            self.start_app()
+
+def enable_hot_reload():
+    script_path = os.path.abspath(__file__)
+    event_handler = ReloadHandler(script_path)
+    observer = Observer()
+    observer.schedule(event_handler, path=os.path.dirname(script_path), recursive=False)
+    observer.start()
+    print("Hot Reloading ativado. Monitorando alterações em interface.py...")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    args = adicionar_it.get_args()
+
+    if(args.reload):
+        enable_hot_reload()
+    else:
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())

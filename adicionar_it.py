@@ -22,10 +22,17 @@ parser.add_argument("--interp_factor", type=int, default=2,
                     help="Fator de interpolação (ex.: 2 => insere 1 frame entre cada par, 3 => insere 2, etc).")
 parser.add_argument("--duration", type=float, default=None,
                     help="Duração real do vídeo de entrada (em segundos), se diferente do calculado.")
+parser.add_argument("--reload", action="store_true", help="Ativar hot reloading")
+
+# Torna os argumentos acessíveis de outros arquivos
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Info] Dispositivo: {device}")
+
+# Exemplo de exportação para uso externo
+def get_args():
+    return args
 
 def tensor_to_image(tensor):
     """
