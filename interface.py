@@ -6,14 +6,14 @@ import torch
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
-    QSpinBox, QFileDialog, QTabWidget, QProgressBar, QHBoxLayout, QVBoxLayout, QMessageBox, QSlider
+    QSpinBox, QFileDialog, QTabWidget, QProgressBar, QHBoxLayout, QVBoxLayout, QMessageBox, QSlider, QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo, QRect
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl
 # from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap, QPainter, QBrush
 
 
 from watchdog.observers import Observer
@@ -128,6 +128,11 @@ class DraggableButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.setAcceptDrops(True)
+        self.setMinimumHeight(80)
+        self.setMinimumWidth(300)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 8px;")
+        self.setFont(QFont("Helvetica", 12))
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():  # Verifica se o conteúdo arrastado é um arquivo
@@ -165,18 +170,16 @@ class MainWindow(QMainWindow):
 
         model_title = QLabel("Modelo")
         model_title.setFont(QFont("Helvetica", 16, QFont.DemiBold))
-        # model_title.setMargin(4)
         model_title.setStyleSheet("color: #434343;")
         model_box.addWidget(model_title)
 
+        model_subtitle = QLabel("Selecione o modelo de interpolação que será usado para interpolar o vídeo.")
+        model_subtitle.setFont(QFont("Helvetica", 12, QFont.Light))
+        model_subtitle.setStyleSheet("color: #99a1af;")
+        model_box.addWidget(model_subtitle)
 
-        btn1 = DraggableButton("Arrastar ou clicar para selecionar modelo", self)
-        btn1.setMinimumHeight(80)
-        btn1.setMinimumWidth(300)
-        # btn1.setMaximumWidth(700)
+        btn1 = DraggableButton("Arraste ou clique para selecionar o modelo (.pth, .tar)", self)       
         btn1.clicked.connect(lambda: self.select_model(btn1))
-        btn1.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 8px;")
-        btn1.setFont(QFont("Helvetica", 12))
         model_box.addWidget(btn1)
 
         layout.addLayout(model_box)
@@ -192,13 +195,14 @@ class MainWindow(QMainWindow):
         video_title.setStyleSheet("color: #434343;")
         video_box.addWidget(video_title)
 
-        btn2 = DraggableButton("Arrastar ou clicar para selecionar vídeo", self)
-        btn2.setMinimumHeight(80)
-        btn2.setMinimumWidth(300)
-        # btn2.setMaximumWidth(700)
-        btn2.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 8px;")
-        btn2.setFont(QFont("Helvetica", 12))
+        video_subtitle = QLabel("Selecione o vídeo que será interpolado.")
+        video_subtitle.setFont(QFont("Helvetica", 12, QFont.Light))
+        video_subtitle.setStyleSheet("color: #99a1af;")
+        video_box.addWidget(video_subtitle)
+
+        btn2 = DraggableButton("Arraste ou clique para selecionar o vídeo (.mp4, .avi, .mov)", self)
         btn2.clicked.connect(lambda: self.select_video(btn2))
+        
         video_box.addWidget(btn2)
         
 
@@ -225,10 +229,15 @@ class MainWindow(QMainWindow):
         # Seção saída
         h3 = QVBoxLayout()
         h3.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        h3label = QLabel("Caminho de Saída")
+        h3label = QLabel("Diretório de Saída")
         h3label.setFont(QFont("Helvetica", 16, QFont.DemiBold))
         h3label.setStyleSheet("color: #434343;")
         h3.addWidget(h3label)
+
+        h3_subtitle = QLabel("Selecione o diretório em que o vídeo interpolado será enviado.")
+        h3_subtitle.setFont(QFont("Helvetica", 12, QFont.Light))
+        h3_subtitle.setStyleSheet("color: #99a1af;")
+        h3.addWidget(h3_subtitle)
 
         h3_row = QHBoxLayout()
         self.output_path = QLineEdit()
@@ -241,6 +250,7 @@ class MainWindow(QMainWindow):
         btn3.clicked.connect(self.select_output)
         btn3.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 8px;")
         btn3.setFont(QFont("Helvetica", 12))
+        btn3.setCursor(Qt.CursorShape.PointingHandCursor)
         h3_row.addWidget(btn3)
 
         h3.addLayout(h3_row)
@@ -252,12 +262,15 @@ class MainWindow(QMainWindow):
         self.btn_interp.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 12px;")
         self.btn_interp.setFont(QFont("Helvetica", 12))
         self.btn_interp.setMinimumWidth(240)
+        self.btn_interp.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_interp.clicked.connect(self.start_interpolation)
         btn_interp_container.addWidget(self.btn_interp)
         btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addLayout(btn_interp_container)
+
         self.progress = QProgressBar()
-        self.progress.setHidden(True)
+        self.progress.setHidden(False)
+        self.progress.setFont(QFont("Helvetica", 14, QFont.Medium))
         layout.addWidget(self.progress)
         
 
@@ -317,7 +330,7 @@ class MainWindow(QMainWindow):
         result = QWidget()
         vlayout = QVBoxLayout(result)
         hlayout = QHBoxLayout()
-        player1 = QtMediaPlayerWidget(self.video_path.text())
+        player1 = QtMediaPlayerWidget(self.video_path)
         player2 = QtMediaPlayerWidget(interpolated_path)
         hlayout.addWidget(player1)
         hlayout.addWidget(player2)
