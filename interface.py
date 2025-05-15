@@ -1,6 +1,7 @@
 import sys
 import os
 import subprocess
+from typing import Final
 import cv2
 import torch
 
@@ -8,12 +9,11 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
     QSpinBox, QFileDialog, QTabWidget, QProgressBar, QHBoxLayout, QVBoxLayout, QMessageBox, QSlider, QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo, QRect
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo, QTimer, QRect, QPoint
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl
-# from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont, QIcon, QPainter, QColor, QBrush
 
 
 from watchdog.observers import Observer
@@ -23,6 +23,42 @@ import time
 
 # importa suas funções de interpolação
 import adicionar_it
+
+SPINBOX_STYLE: Final[str] = """
+    QSpinBox {
+        padding: 8px; 
+        border-radius: 8px;
+        border: 1px solid #ccc;
+    }
+    QSpinBox::up-button {
+        subcontrol-origin: border;
+        subcontrol-position: top right;
+        width: 28px;
+        border-top-right-radius: 8px;
+        border-bottom: 1px solid #ccc;
+        border-left: 1px solid #ccc;
+        padding-top: 2px;
+    }
+    QSpinBox::down-button {
+        subcontrol-origin: border;
+        subcontrol-position: bottom right;
+        width: 28px;
+        border-bottom-right-radius: 8px;
+        border-top: 1px solid #ccc;
+        border-left: 1px solid #ccc;
+        padding-bottom: 1px;
+    }
+    QSpinBox::up-arrow {
+        image: url('./assets/chevron-up.png');
+        width: 20px;
+        height: 20px;
+    }
+    QSpinBox::down-arrow {
+        image: url('./assets/chevron-down.png');
+        width: 20px;
+        height: 20px;
+    }
+"""
 
 class QtMediaPlayerWidget(QWidget):
     def __init__(self, video_path, parent=None):
@@ -148,6 +184,58 @@ class DraggableButton(QPushButton):
                 filename = QFileInfo(files[0]).fileName()
                 self.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
 
+class AnimatedProgressBar(QProgressBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.offset = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_animation)
+        self.timer.start(40)  # Mais rápido para suavidade
+
+    def update_animation(self):
+        self.offset = (self.offset + 4) % 32  # Ajuste para largura das listras
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        rect = self.rect()
+        painter.setRenderHint(QPainter.Antialiasing)
+        # Fundo
+        painter.setBrush(QColor("#e6f0ff"))
+        painter.setPen(QColor("#2b7fff"))
+        painter.drawRoundedRect(rect, 8, 8)
+
+        # Chunk animado com listras diagonais
+        progress = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if self.maximum() > self.minimum() else 0
+        chunk_rect = QRect(rect)
+        chunk_rect.setWidth(int(rect.width() * progress))
+
+        if chunk_rect.width() > 0:
+            painter.save()
+            painter.setClipRect(chunk_rect)
+            stripe_w = 32
+            stripe_h = rect.height()
+            color1 = QColor("#2b7fff")
+            color2 = QColor("#e6f0ff")
+            color1.setAlpha(180)
+            color2.setAlpha(0)
+            for x in range(-stripe_w + self.offset, chunk_rect.width(), stripe_w):
+                points = [
+                    QPoint(x, 0),
+                    QPoint(x + stripe_w // 2, 0),
+                    QPoint(x + stripe_w, stripe_h),
+                    QPoint(x + stripe_w // 2, stripe_h)
+                ]
+                painter.setBrush(QBrush(color1))
+                painter.setPen(Qt.NoPen)
+                painter.drawPolygon(*points)
+            painter.restore()
+
+        # Texto centralizado
+        painter.setPen(QColor("#434343"))
+        painter.setFont(QFont("Helvetica", 14, QFont.Medium))
+        text = f"{self.value()}%"
+        painter.drawText(rect, Qt.AlignCenter, text)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -155,6 +243,8 @@ class MainWindow(QMainWindow):
         self.resize(900, 750)
         self.setAcceptDrops(True)
         self.opacity_effect = QGraphicsOpacityEffect()
+        # TODO: Trocar por um ícone mais apropriado
+        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -206,7 +296,6 @@ class MainWindow(QMainWindow):
         
         video_box.addWidget(btn2)
         
-
         self.info_label = QLabel("Resolução: —    FPS: —")
         self.info_label.setFont(QFont("Helvetica", 12))
         self.info_label.setStyleSheet("color: #434343;")
@@ -216,12 +305,14 @@ class MainWindow(QMainWindow):
         interpolation_label = QLabel("Taxa de Interpolação:")
         interpolation_label.setFont(QFont("Helvetica", 12))
         interpolation_label.setStyleSheet("color: #434343;")
+       
         h4.addWidget(interpolation_label)
-        self.spin = QSpinBox()
+        self.spin = QSpinBox(self)
         self.spin.setRange(2, 10)
         self.spin.setValue(2)
-        self.spin.setStyleSheet("padding: 8px; border-radius: 8px; border: 1px solid #ccc;")
+        self.spin.setStyleSheet(SPINBOX_STYLE)
         self.spin.setFont(QFont("Helvetica", 12))
+        self.spin.setToolTip("Número de quadros interpolados entre cada quadro original.")
         h4.addWidget(self.spin)
         video_box.addLayout(h4)
 
@@ -241,6 +332,7 @@ class MainWindow(QMainWindow):
         h3.addWidget(h3_subtitle)
 
         h3_row = QHBoxLayout()
+        h3_row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.output_path = QLineEdit()
         self.output_path.setPlaceholderText("Diretório")
         self.output_path.setStyleSheet("padding: 10px; border-radius: 8px; border: 1px solid #ccc;")
@@ -254,10 +346,44 @@ class MainWindow(QMainWindow):
         btn3.setCursor(Qt.CursorShape.PointingHandCursor)
         h3_row.addWidget(btn3)
 
+        # Resolução de saída
+        h_res = QHBoxLayout()
+        h_res.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        res_label = QLabel("Resolução de Saída:")
+        res_label.setFont(QFont("Helvetica", 12))
+        res_label.setStyleSheet("color: #434343;")
+        h_res.addWidget(res_label)
+        self.spinWidth = QSpinBox(self)
+        self.spinWidth.setRange(1, 10000)
+        self.spinWidth.setEnabled(False)
+        self.spinWidth.setStyleSheet(SPINBOX_STYLE)
+        self.spinWidth.setFont(QFont("Helvetica", 12))
+        self.spinWidth.setFixedWidth(256)
+        self.spinWidth.setToolTip("Largura do vídeo interpolado.")
+        h_res.addWidget(self.spinWidth)
+
+        x_label = QLabel("×")
+        x_label.setFont(QFont("Helvetica", 12))
+        x_label.setStyleSheet("color: #434343;")
+        h_res.addWidget(x_label)
+        self.spinHeight = QSpinBox(self)
+        self.spinHeight.setRange(1, 10000)
+        self.spinHeight.setEnabled(False)
+        self.spinHeight.setStyleSheet(SPINBOX_STYLE)
+        self.spinHeight.setFont(QFont("Helvetica", 12))
+        self.spinHeight.setFixedWidth(256)
+        self.spinHeight.setToolTip("Altura do vídeo interpolado.")
+        h_res.addWidget(self.spinHeight)
+        self.show()
+
         h3.addLayout(h3_row)
+        h3.addLayout(h_res)
         layout.addLayout(h3)
 
         # Botão iniciar e progresso
+        last_section = QVBoxLayout()
+        last_section.setSpacing(16)
+        last_section.setContentsMargins(0, 16, 0, 0)
         btn_interp_container = QHBoxLayout()
         self.btn_interp = QPushButton("Interpolar")
         self.btn_interp.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 12px;")
@@ -267,12 +393,14 @@ class MainWindow(QMainWindow):
         self.btn_interp.clicked.connect(self.start_interpolation)
         btn_interp_container.addWidget(self.btn_interp)
         btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout.addLayout(btn_interp_container)
+        last_section.addLayout(btn_interp_container)
+       
+        self.progress = AnimatedProgressBar()
+        self.progress.setHidden(False)
 
-        self.progress = QProgressBar()
-        self.progress.setHidden(True)
-        self.progress.setFont(QFont("Helvetica", 14, QFont.Medium))
-        layout.addWidget(self.progress)
+        last_section.addWidget(self.progress)
+
+        layout.addLayout(last_section)
 
         self.tabs.addTab(cfg, "Configurações")
 
@@ -295,9 +423,27 @@ class MainWindow(QMainWindow):
             self.info_label.setText(f"Resolução: {w}×{h}    FPS: {fps:.2f}")
             filename = QFileInfo(path).fileName()
             button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
+             # Atualiza resolução de saída
+            self.spinWidth.setMaximum(w)
+            self.spinHeight.setMaximum(h)
+            self.spinWidth.setValue(w)
+            self.spinHeight.setValue(h)
+            self.spinWidth.setEnabled(True)
+            self.spinHeight.setEnabled(True)
 
     def select_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", "interpolado.mp4", "Vídeo MP4 (*.mp4)")
+        if not self.video_path:
+            QMessageBox.warning(self, "Erro", "Selecione primeiro um vídeo de entrada.")
+            return
+        input_ext = os.path.splitext(self.video_path)[1].lower()
+        filters = "Vídeo MP4 (*.mp4);;Vídeo AVI (*.avi);;Vídeo MOV (*.mov)"
+        default_filter = "Vídeo MP4 (*.mp4)"
+        if input_ext == ".avi":
+            default_filter = "Vídeo AVI (*.avi)"
+        elif input_ext == ".mov":
+            default_filter = "Vídeo MOV (*.mov)"
+        default_name = f"interpolado{input_ext if input_ext in ['.mp4','.avi','.mov'] else '.mp4'}"
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", default_name, filters, default_filter)
         if path:
             self.output_path.setText(path)
 
@@ -332,8 +478,8 @@ class MainWindow(QMainWindow):
         result = QWidget()
         vlayout = QVBoxLayout(result)
         hlayout = QHBoxLayout()
-        player1 = QtMediaPlayerWidget(self.video_path)
-        player2 = QtMediaPlayerWidget(interpolated_path)
+        player1 = QtMediaPlayerWidget(self.video_path, self)
+        player2 = QtMediaPlayerWidget(interpolated_path, self)
         hlayout.addWidget(player1)
         hlayout.addWidget(player2)
         vlayout.addLayout(hlayout)
@@ -426,10 +572,15 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentWidget(result)
 
     def closeEvent(self, event):
-        if hasattr(self, 'thread') and self.thread.isRunning():
+        self.cancel_interpolation()  
+        if hasattr(self, 'thread') and hasattr(self.thread, 'isRunning') and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait()
         super().closeEvent(event)
+    
+    def cancel_interpolation(self):
+        if hasattr(self, 'thread') and self.thread.isRunning():
+            self.thread.requestInterruption()
 
 
 class ReloadHandler(FileSystemEventHandler):
