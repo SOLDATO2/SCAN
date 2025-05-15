@@ -13,7 +13,7 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl
 # from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-from PyQt5.QtGui import QFont, QPixmap, QPainter, QBrush
+from PyQt5.QtGui import QFont, QIcon
 
 
 from watchdog.observers import Observer
@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
         self.resize(900, 750)
         self.setAcceptDrops(True)
+        self.opacity_effect = QGraphicsOpacityEffect()
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -242,13 +243,13 @@ class MainWindow(QMainWindow):
         h3_row = QHBoxLayout()
         self.output_path = QLineEdit()
         self.output_path.setPlaceholderText("Diretório")
-        self.output_path.setStyleSheet("padding: 8px; border-radius: 8px; border: 1px solid #ccc;")
+        self.output_path.setStyleSheet("padding: 10px; border-radius: 8px; border: 1px solid #ccc;")
         self.output_path.setFont(QFont("Helvetica", 12))
         h3_row.addWidget(self.output_path)
 
         btn3 = QPushButton("Selecionar Diretório")
         btn3.clicked.connect(self.select_output)
-        btn3.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 8px;")
+        btn3.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 12px;")
         btn3.setFont(QFont("Helvetica", 12))
         btn3.setCursor(Qt.CursorShape.PointingHandCursor)
         h3_row.addWidget(btn3)
@@ -269,10 +270,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_interp_container)
 
         self.progress = QProgressBar()
-        self.progress.setHidden(False)
+        self.progress.setHidden(True)
         self.progress.setFont(QFont("Helvetica", 14, QFont.Medium))
         layout.addWidget(self.progress)
-        
 
         self.tabs.addTab(cfg, "Configurações")
 
@@ -309,6 +309,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
             return
 
+        self.opacity_effect.setOpacity(0.5)
+        self.btn_interp.setGraphicsEffect(self.opacity_effect)
         self.btn_interp.setEnabled(False)
         self.thread = InterpolationThread(
             self.model_path,
@@ -336,15 +338,52 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(player2)
         vlayout.addLayout(hlayout)
 
-        btn_play = QPushButton("▶ Play Ambos")
-        btn_play.clicked.connect(lambda: (player1.play(), player2.play()))
-        btn_pause = QPushButton("⏸ Pause Ambos")
-        btn_pause.clicked.connect(lambda: (player1.pause(), player2.pause()))
+        # Sliders de volume
+        volume_slider_layout = QHBoxLayout()
+        volume_slider_column1 = QVBoxLayout()
+        slider1_label = QLabel("Controle de Volume - Player 1")
+        slider1_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        volume_slider_column1.addWidget(slider1_label)
+
+        slider_volume = QSlider(Qt.Horizontal)
+        slider_volume.setRange(0, 100)
+        slider_volume.setValue(50)  # valor inicial
+        volume_slider_column1.addWidget(slider_volume)
+        volume_slider_layout.addLayout(volume_slider_column1)
+
+        volume_slider_column2 = QVBoxLayout()
+        slider2_label = QLabel("Controle de Volume - Player 2")
+        slider2_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        volume_slider_column2.addWidget(slider2_label)
+
+        slider_volume2 = QSlider(Qt.Horizontal)
+        slider_volume2.setRange(0, 100)
+        slider_volume2.setValue(50)  # valor inicial
+        volume_slider_column2.addWidget(slider_volume2)
+        volume_slider_layout.addLayout(volume_slider_column2)
+
+        vlayout.addLayout(volume_slider_layout)
+
+        def slider_volume_moved1(value):
+            player1.media_player.setVolume(value)
+
+        def slider_volume_moved2(value):
+            player2.media_player.setVolume(value)
+
+        slider_volume.valueChanged.connect(slider_volume_moved1)
+        slider_volume2.valueChanged.connect(slider_volume_moved2)
+
+        # Slider de tempo
+        time_layout = QHBoxLayout()
+        time_column = QVBoxLayout()
+        time_label = QLabel("Controle de Tempo")
+        time_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        time_column.addWidget(time_label)
 
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0, 0)
-        vlayout.addWidget(QLabel("Controle de Tempo"))
-        vlayout.addWidget(slider)
+        time_column.addWidget(slider)
+        time_layout.addLayout(time_column)
 
         def sync_slider():
             duration = min(player1.duration(), player2.duration())
@@ -359,36 +398,32 @@ class MainWindow(QMainWindow):
         player2.media_player.positionChanged.connect(sync_slider)
         slider.sliderMoved.connect(slider_moved)
 
-        # Slider de volume
-        slider_volume = QSlider(Qt.Horizontal)
-        slider_volume.setRange(0, 100)
-        slider_volume.setValue(50)  # valor inicial
-        vlayout.addWidget(QLabel("Controle de Volume"))
-        vlayout.addWidget(slider_volume)
+        buttons_row = QHBoxLayout()
+        btn_play = QPushButton("Play Ambos")
+        btn_play.setIcon(QIcon("./assets/play_icon.png"))  # Adicione um ícone de play
+        btn_play.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 9px;")
+        btn_play.setFont(QFont("Helvetica", 11, QFont.Medium))
+        btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_play.clicked.connect(lambda: (player1.play(), player2.play()))
 
-        def slider_volume_moved(value):
-            player1.media_player.setVolume(value)
-            player2.media_player.setVolume(value)
+        btn_pause = QPushButton("Pause Ambos")
+        btn_pause.setIcon(QIcon("./assets/pause_icon.png"))  # Adicione um ícone de pause
+        btn_pause.setStyleSheet("color: #2b7fff; border-radius: 4px; padding: 8px; border: 1px solid #2b7fff;")
+        btn_pause.setFont(QFont("Helvetica", 11, QFont.Medium))
+        btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_pause.clicked.connect(lambda: (player1.pause(), player2.pause()))
 
-        slider_volume.valueChanged.connect(slider_volume_moved)
+        buttons_row.addWidget(btn_play)
+        buttons_row.addWidget(btn_pause)
 
-        vlayout.addWidget(btn_play)
-        vlayout.addWidget(btn_pause)
+        time_layout.addLayout(buttons_row)
+        vlayout.addLayout(time_layout)
 
-        self.tabs.addTab(result, "Resultado")
+        self.opacity_effect.setOpacity(1.0)
+        self.btn_interp.setGraphicsEffect(self.opacity_effect)
+        self.btn_interp.setEnabled(True)        
+        self.tabs.addTab(result, "Apuração")
         self.tabs.setCurrentWidget(result)
-        self.btn_interp.setEnabled(True)
-
-    # def dragEnterEvent(self, event):
-    #     if event.mimeData().hasUrls():
-    #         event.accept()
-    #     else:
-    #         event.ignore()
-
-    # def dropEvent(self, event):
-    #     files = [u.toLocalFile() for u in event.mimeData().urls()]
-    #     for f in files:
-    #         print(f)
 
     def closeEvent(self, event):
         if hasattr(self, 'thread') and self.thread.isRunning():
