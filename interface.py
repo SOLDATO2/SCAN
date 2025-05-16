@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QFileInfo, QTimer, QRect, QPoi
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QFont, QIcon, QPainter, QColor, QBrush
+from PyQt5.QtGui import QFont, QIcon, QPainter, QColor, QBrush, QLinearGradient
 
 
 from watchdog.observers import Observer
@@ -127,6 +127,9 @@ class InterpolationThread(QThread):
         n_pairs = len(frames) - 1
         new_frames = [frames[0]]
         for i in range(n_pairs):
+            if self.isInterruptionRequested():
+                self.progress.emit(0)
+                return  # Sai do método, encerrando a thread
             mids = adicionar_it.recursive_interpolate(
                 model, frames[i], frames[i+1],
                 self.interp_factor - 1, transform, device
@@ -190,10 +193,14 @@ class AnimatedProgressBar(QProgressBar):
         self.offset = 0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_animation)
-        self.timer.start(40)  # Mais rápido para suavidade
+        self.timer.start(50)
+
+    def setValue(self, value):
+        super().setValue(value)
+        # self.offset = 0  # Reinicia o ciclo do brilho ao mudar o progresso
 
     def update_animation(self):
-        self.offset = (self.offset + 4) % 32  # Ajuste para largura das listras
+        self.offset = (self.offset + 6) % 1000
         self.update()
 
     def paintEvent(self, event):
@@ -205,42 +212,83 @@ class AnimatedProgressBar(QProgressBar):
         painter.setPen(QColor("#2b7fff"))
         painter.drawRoundedRect(rect, 8, 8)
 
-        # Chunk animado com listras diagonais
-        progress = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if self.maximum() > self.minimum() else 0
-        chunk_rect = QRect(rect)
-        chunk_rect.setWidth(int(rect.width() * progress))
-
-        if chunk_rect.width() > 0:
+        # Chunk animado (indeterminado) com listras diagonais customizadas
+        if self.minimum() == 0 and self.maximum() == 0:
+            chunk_width = rect.width() // 3
+            x = self.offset - chunk_width
+            chunk_rect = QRect(x, 0, chunk_width, rect.height())
             painter.save()
             painter.setClipRect(chunk_rect)
-            stripe_w = 32
-            stripe_h = rect.height()
+            stripe_w = 20
             color1 = QColor("#2b7fff")
-            color2 = QColor("#e6f0ff")
-            color1.setAlpha(180)
-            color2.setAlpha(0)
-            for x in range(-stripe_w + self.offset, chunk_rect.width(), stripe_w):
+            color2 = QColor("#90caf9")  # cor secundária da listra
+            for i, sx in enumerate(range(-stripe_w*2, chunk_rect.width()+stripe_w*2, stripe_w)):
                 points = [
-                    QPoint(x, 0),
-                    QPoint(x + stripe_w // 2, 0),
-                    QPoint(x + stripe_w, stripe_h),
-                    QPoint(x + stripe_w // 2, stripe_h)
+                    QPoint(sx + int(self.offset/2), 0),
+                    QPoint(sx + stripe_w, 0),
+                    QPoint(sx + stripe_w//2, rect.height()),
+                    QPoint(sx - stripe_w//2, rect.height())
                 ]
-                painter.setBrush(QBrush(color1))
+                painter.setBrush(QBrush(color1 if i % 2 == 0 else color2))
                 painter.setPen(Qt.NoPen)
                 painter.drawPolygon(*points)
-            painter.restore()
+            # ...dentro do método paintEvent, após o for das listras...
+            glow_width = int(chunk_rect.width() * 0.8)
+            glow_x = x + (self.offset % (chunk_rect.width() - glow_width)) if chunk_rect.width() > glow_width else x
+            glow_rect = QRect(glow_x, 0, glow_width, chunk_rect.height())
 
-        # Texto centralizado
-        painter.setPen(QColor("#434343"))
-        painter.setFont(QFont("Helvetica", 14, QFont.Medium))
-        text = f"{self.value()}%"
-        painter.drawText(rect, Qt.AlignCenter, text)
+            gradient = QLinearGradient(glow_rect.left(), 0, glow_rect.right(), 0)
+            gradient.setColorAt(0.0, QColor(255, 255, 255, 0))
+            gradient.setColorAt(0.5, QColor(255, 255, 255, 200))  # Centro mais brilhante
+            gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+
+            painter.setBrush(QBrush(gradient))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(glow_rect)
+            painter.restore()
+        else:
+            # Barra normal
+            progress = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if self.maximum() > self.minimum() else 0
+            chunk_rect = QRect(rect)
+            chunk_rect.setWidth(int(rect.width() * progress))
+            painter.setBrush(QColor("#2b7fff"))
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(chunk_rect, 8, 8)
+
+            # Efeito luminoso percorre toda a barra, mas aparece só na parte preenchida
+            if chunk_rect.width() > 0 and self.value() < 100:
+                painter.save()
+                painter.setClipRect(chunk_rect)  # Limita o efeito à parte preenchida
+                bar_width = rect.width()         # Usa a barra toda para o ciclo do brilho
+                glow_width = int(bar_width * 0.2)
+                cycle = max(1, bar_width + glow_width)
+                glow_x = (self.offset % cycle) - glow_width
+                glow_rect = QRect(glow_x, 0, glow_width, rect.height())
+
+                gradient = QLinearGradient(glow_rect.left(), 0, glow_rect.right(), 0)
+                gradient.setColorAt(0.0, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.2, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.5, QColor(255, 255, 255, 150))
+                gradient.setColorAt(0.8, QColor(255, 255, 255, 0))
+                gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+
+                painter.setBrush(QBrush(gradient))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(glow_rect)
+                painter.restore()
+
+        # Texto centralizado (apenas se não for indeterminado)
+        if not (self.minimum() == 0 and self.maximum() == 0):
+            painter.setPen(QColor("white" if self.value() > 50 else "#2b7fff"))
+            painter.setFont(QFont("Helvetica", 14, QFont.Medium))
+            text = f"{self.value() if self.value() >= 0 else 0}%"
+            painter.drawText(rect, Qt.AlignCenter, text)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
-        self.resize(900, 750)
+        self.resize(1000, 800)
         self.setAcceptDrops(True)
         self.opacity_effect = QGraphicsOpacityEffect()
         # TODO: Trocar por um ícone mais apropriado
@@ -396,7 +444,7 @@ class MainWindow(QMainWindow):
         last_section.addLayout(btn_interp_container)
        
         self.progress = AnimatedProgressBar()
-        self.progress.setHidden(False)
+        self.progress.setHidden(True)
 
         last_section.addWidget(self.progress)
 
@@ -579,7 +627,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
     
     def cancel_interpolation(self):
-        if hasattr(self, 'thread') and self.thread.isRunning():
+        if hasattr(self, 'thread') and hasattr(self.thread, 'isRunning') and self.thread.isRunning():
             self.thread.requestInterruption()
 
 
