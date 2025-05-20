@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from model.layers import ConvNorm, UpConvNorm, RCAB, ResidualGroup, Interpolation, Encoder, Decoder, SCAN_EncDec
+from model.layers import ConvNorm, UpConvNorm, Encoder, Decoder, SCAN_EncDec
 from dataset.frame_dataset import FrameDataset, AugmentWrapper
 from trainer.trainer import Trainer, plot_losses
 
@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--vimeo_dir", type=str,
                         help="Diretório root do Vimeo (contendo 'sequences', 'tri_trainlist.txt', 'tri_testlist.txt'). exemplo: C:/Users/usuario/vimeo_triplet")
-    parser.add_argument("--epochs", type=int, default=600, help="Número de épocas de treinamento.")
+    parser.add_argument("--epochs", type=int, default=150, help="Número de épocas de treinamento.")
     parser.add_argument("--batch_size", type=int, default=32, help="Tamanho do batch.")
     parser.add_argument("--hide_window", action='store_true',
                         help="Se definido, NÃO exibe a janela de visualização")
@@ -106,17 +106,17 @@ def main():
         #LEMBRAR QUE O MELHOR MODELO FOI ATINGIDO COM LR 0.00003 DAS EPOCAS 0-400 e LR 0.00001 DAS EPOCAS 400-500
         
         #Lr > que 0.0001 causa instabilidade numerica no treinamento
-        if epoch_idx < 250:
-            new_lr = 0.0001
-        elif epoch_idx < 500:
-            new_lr = 0.00003
-        elif epoch_idx < 600:
-            new_lr = 0.00001
-        else:
-            new_lr = trainer.optimizer.param_groups[0]['lr']
+        #if epoch_idx < 125:
+        #    new_lr = 0.00003
+        #elif epoch_idx < 500:
+        #    new_lr = 0.00003
+        #elif epoch_idx < 600:
+        #    new_lr = 0.00003
+        #else:
+        #    new_lr = trainer.optimizer.param_groups[0]['lr']
             
-        for param_group in trainer.optimizer.param_groups:
-            param_group['lr'] = new_lr
+        #for param_group in trainer.optimizer.param_groups:
+        #    param_group['lr'] = new_lr
 
         print(f"[Epoch {epoch_idx+1}/{epochs}] LR = {trainer.optimizer.param_groups[0]['lr']:.6f}")
         

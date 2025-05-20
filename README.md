@@ -6,8 +6,6 @@ SCAN é um modelo de interpolação de frames que utiliza canais de atenção em
 
 Modelo com melhores pesos pode ser baixado de: [Google Drive](https://drive.google.com/file/d/1LymsoEl4TCanVm3ke_Wvo1ZWM7RkF_NX/view?usp=drive_link) (validation loss 0.1116)
 
-Modelo PARA A BRANCH DEV (onde voce está) com melhores pesos pode ser baixado de: [Google Drive](https://drive.google.com/file/d/172T2bWhCSaQkn2BsEYUF7GPtOOn1MYNb/view?usp=sharing)
-
 
 # DEMOS
 
