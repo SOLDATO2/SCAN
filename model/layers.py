@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from model.attention import CALayer, SpatialAttention
+from model.utils import sub_mean
 
 class ConvNorm(nn.Module):
     """
@@ -11,12 +12,12 @@ class ConvNorm(nn.Module):
         reflection_padding = kernel_size // 2
         self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
         self.conv = nn.Conv2d(in_feat, out_feat, stride=stride, kernel_size=kernel_size, bias=True)
-
         self.norm = None
         if norm == 'IN':
             self.norm = nn.InstanceNorm2d(out_feat, track_running_stats=True)
         elif norm == 'BN':
             self.norm = nn.BatchNorm2d(out_feat)
+            
 
     def forward(self, x):
         out = self.reflection_pad(x)
@@ -139,6 +140,7 @@ class Encoder(nn.Module):
     def __init__(self, in_channels=3, nf_start=32, norm=False):
         super(Encoder, self).__init__()
         relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        print(f"Norm Encoder: {norm}")
         self.body = nn.Sequential(
             ConvNorm(in_channels, nf_start, 7, stride=1, norm=norm),
             relu,
@@ -170,7 +172,7 @@ class Decoder(nn.Module):
     """
     def __init__(self, in_channels=192, out_channels=3, norm=False, up_mode='shuffle'):
         super(Decoder, self).__init__()
-        relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        print(f"Norm Decoder: {norm}")
         self.body = nn.Sequential(
             UpConvNorm(in_channels, 128, mode=up_mode, norm=norm),
             nn.LeakyReLU(0.2, inplace=True),
@@ -204,9 +206,8 @@ class SCAN_EncDec(nn.Module):
         x1 = x[:, :3, ...]
         x2 = x[:, 3:, ...]
 
-        # Se desejar aplicar subtração da média, descomente as próximas linhas:
-        # x1, m1 = sub_mean(x1)
-        # x2, m2 = sub_mean(x2)
+        #x1, m1 = sub_mean(x1)
+        #x2, m2 = sub_mean(x2)
 
         if not self.training:
             # Importa a função InOutPaddings do módulo common
@@ -221,7 +222,6 @@ class SCAN_EncDec(nn.Module):
         if not self.training:
             out = paddingOutput(out)
 
-        # Se a subtração da média foi aplicada, re-adicione a média:
-        # out = out + (m1 + m2) / 2.0
+        #out = out + (m1 + m2) / 2.0
 
         return out

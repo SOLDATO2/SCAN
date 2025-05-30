@@ -106,11 +106,7 @@ def main():
         #LEMBRAR QUE O MELHOR MODELO FOI ATINGIDO COM LR 0.00003 DAS EPOCAS 0-400 e LR 0.00001 DAS EPOCAS 400-500
         
         #Lr > que 0.0001 causa instabilidade numerica no treinamento
-        if epoch_idx < 250:
-            new_lr = 0.0001
-        elif epoch_idx < 500:
-            new_lr = 0.00003
-        elif epoch_idx < 600:
+        if epoch_idx == 500:
             new_lr = 0.00001
         else:
             new_lr = trainer.optimizer.param_groups[0]['lr']
