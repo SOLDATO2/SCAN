@@ -20,17 +20,28 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from subprocess import Popen
 import time
+import sys
+import os
 
 # importa suas funções de interpolação
 import adicionar_it
 
-SPINBOX_STYLE: Final[str] = """
-    QSpinBox {
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+def qt_resource_path(relative_path):
+    path = resource_path(relative_path)
+    return path.replace("\\", "/")  # Qt espera barras normais
+
+SPINBOX_STYLE: Final[str] = f"""
+    QSpinBox {{
         padding: 8px; 
         border-radius: 8px;
         border: 1px solid #ccc;
-    }
-    QSpinBox::up-button {
+    }}
+    QSpinBox::up-button {{
         subcontrol-origin: border;
         subcontrol-position: top right;
         width: 28px;
@@ -38,8 +49,8 @@ SPINBOX_STYLE: Final[str] = """
         border-bottom: 1px solid #ccc;
         border-left: 1px solid #ccc;
         padding-top: 2px;
-    }
-    QSpinBox::down-button {
+    }}
+    QSpinBox::down-button {{
         subcontrol-origin: border;
         subcontrol-position: bottom right;
         width: 28px;
@@ -47,17 +58,17 @@ SPINBOX_STYLE: Final[str] = """
         border-top: 1px solid #ccc;
         border-left: 1px solid #ccc;
         padding-bottom: 1px;
-    }
-    QSpinBox::up-arrow {
-        image: url('./assets/chevron-up.png');
+    }}
+    QSpinBox::up-arrow {{
+        image: url("{qt_resource_path('assets/chevron-up.png')}");
         width: 20px;
         height: 20px;
-    }
-    QSpinBox::down-arrow {
-        image: url('./assets/chevron-down.png');
+    }}
+    QSpinBox::down-arrow {{
+        image: url("{qt_resource_path('assets/chevron-down.png')}");
         width: 20px;
         height: 20px;
-    }
+    }}
 """
 
 class QtMediaPlayerWidget(QWidget):
@@ -292,7 +303,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.opacity_effect = QGraphicsOpacityEffect()
         # TODO: Trocar por um ícone mais apropriado
-        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
+        self.setWindowIcon(QIcon(resource_path("assets/3-d-cube.svg")))
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -438,7 +449,7 @@ class MainWindow(QMainWindow):
         self.btn_interp.setFont(QFont("Helvetica", 12))
         self.btn_interp.setMinimumWidth(240)
         self.btn_interp.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_interp.clicked.connect(self.start_interpolation)
+        # self.btn_interp.clicked.connect(self.start_interpolation)
         btn_interp_container.addWidget(self.btn_interp)
         btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         last_section.addLayout(btn_interp_container)
@@ -452,82 +463,12 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(cfg, "Configurações")
 
-    def select_model(self, button):
-        path, _ = QFileDialog.getOpenFileName(self, "Selecione o modelo", "", "Pytorch (*.pth *.tar)")
-        if path:
-            self.model_path = path
-            filename = QFileInfo(path).fileName()
-            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
-
-    def select_video(self, button):
-        path, _ = QFileDialog.getOpenFileName(self, "Selecione o vídeo", "", "Vídeos (*.mp4 *.avi *.mov)")
-        if path:
-            self.video_path = path
-            cap = cv2.VideoCapture(path)
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            cap.release()
-            self.info_label.setText(f"Resolução: {w}×{h}    FPS: {fps:.2f}")
-            filename = QFileInfo(path).fileName()
-            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
-             # Atualiza resolução de saída
-            self.spinWidth.setMaximum(w)
-            self.spinHeight.setMaximum(h)
-            self.spinWidth.setValue(w)
-            self.spinHeight.setValue(h)
-            self.spinWidth.setEnabled(True)
-            self.spinHeight.setEnabled(True)
-
-    def select_output(self):
-        if not self.video_path:
-            QMessageBox.warning(self, "Erro", "Selecione primeiro um vídeo de entrada.")
-            return
-        input_ext = os.path.splitext(self.video_path)[1].lower()
-        filters = "Vídeo MP4 (*.mp4);;Vídeo AVI (*.avi);;Vídeo MOV (*.mov)"
-        default_filter = "Vídeo MP4 (*.mp4)"
-        if input_ext == ".avi":
-            default_filter = "Vídeo AVI (*.avi)"
-        elif input_ext == ".mov":
-            default_filter = "Vídeo MOV (*.mov)"
-        default_name = f"interpolado{input_ext if input_ext in ['.mp4','.avi','.mov'] else '.mp4'}"
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", default_name, filters, default_filter)
-        if path:
-            self.output_path.setText(path)
-
-    def start_interpolation(self):
-        if not os.path.isfile(self.model_path) or not os.path.isfile(self.video_path):
-            QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
-            return
-        if not self.output_path.text().strip():
-            QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
-            return
-
-        self.opacity_effect.setOpacity(0.5)
-        self.btn_interp.setGraphicsEffect(self.opacity_effect)
-        self.btn_interp.setEnabled(False)
-        self.thread = InterpolationThread(
-            self.model_path,
-            self.video_path,
-            self.spin.value(),
-            self.output_path.text().strip()
-        )
-        self.thread.progress.connect(self.progress.setValue)
-        self.thread.finished.connect(self.on_finished)
-        self.thread.start()
-
-        self.progress.setHidden(False)
-
-    def on_finished(self, interpolated_path):
-        if hasattr(self, 'thread'):
-            self.thread.quit()
-            self.thread.wait()
-
+        # Aba de depuração
         result = QWidget()
         vlayout = QVBoxLayout(result)
         hlayout = QHBoxLayout()
-        player1 = QtMediaPlayerWidget(self.video_path, self)
-        player2 = QtMediaPlayerWidget(interpolated_path, self)
+        player1 = QtMediaPlayerWidget(resource_path('./dmc3_30fps.mp4'), self)
+        player2 = QtMediaPlayerWidget(resource_path('./interpolado.mp4'), self)
         hlayout.addWidget(player1)
         hlayout.addWidget(player2)
         vlayout.addLayout(hlayout)
@@ -614,10 +555,175 @@ class MainWindow(QMainWindow):
         vlayout.addLayout(time_layout)
 
         self.opacity_effect.setOpacity(1.0)
-        self.btn_interp.setGraphicsEffect(self.opacity_effect)
-        self.btn_interp.setEnabled(True)        
+        self.btn_interp.setGraphicsEffect(self.opacity_effect)       
         self.tabs.addTab(result, "Apuração")
-        self.tabs.setCurrentWidget(result)
+
+    def select_model(self, button):
+        path, _ = QFileDialog.getOpenFileName(self, "Selecione o modelo", "", "Pytorch (*.pth *.tar)")
+        if path:
+            self.model_path = path
+            filename = QFileInfo(path).fileName()
+            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
+
+    def select_video(self, button):
+        path, _ = QFileDialog.getOpenFileName(self, "Selecione o vídeo", "", "Vídeos (*.mp4 *.avi *.mov)")
+        if path:
+            self.video_path = path
+            cap = cv2.VideoCapture(path)
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            cap.release()
+            self.info_label.setText(f"Resolução: {w}×{h}    FPS: {fps:.2f}")
+            filename = QFileInfo(path).fileName()
+            button.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
+             # Atualiza resolução de saída
+            self.spinWidth.setMaximum(w)
+            self.spinHeight.setMaximum(h)
+            self.spinWidth.setValue(w)
+            self.spinHeight.setValue(h)
+            self.spinWidth.setEnabled(True)
+            self.spinHeight.setEnabled(True)
+
+    def select_output(self):
+        if not self.video_path:
+            QMessageBox.warning(self, "Erro", "Selecione primeiro um vídeo de entrada.")
+            return
+        input_ext = os.path.splitext(self.video_path)[1].lower()
+        filters = "Vídeo MP4 (*.mp4);;Vídeo AVI (*.avi);;Vídeo MOV (*.mov)"
+        default_filter = "Vídeo MP4 (*.mp4)"
+        if input_ext == ".avi":
+            default_filter = "Vídeo AVI (*.avi)"
+        elif input_ext == ".mov":
+            default_filter = "Vídeo MOV (*.mov)"
+        default_name = f"interpolado{input_ext if input_ext in ['.mp4','.avi','.mov'] else '.mp4'}"
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", default_name, filters, default_filter)
+        if path:
+            self.output_path.setText(path)
+
+    def start_interpolation(self):
+        if not os.path.isfile(self.model_path) or not os.path.isfile(self.video_path):
+            QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
+            return
+        if not self.output_path.text().strip():
+            QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
+            return
+
+        self.opacity_effect.setOpacity(0.5)
+        self.btn_interp.setGraphicsEffect(self.opacity_effect)
+        self.btn_interp.setEnabled(False)
+        self.thread = InterpolationThread(
+            self.model_path,
+            self.video_path,
+            self.spin.value(),
+            self.output_path.text().strip()
+        )
+        self.thread.progress.connect(self.progress.setValue)
+        self.thread.finished.connect(self.on_finished)
+        self.thread.start()
+
+        self.progress.setHidden(False)
+
+    def on_finished(self, interpolated_path):
+        if hasattr(self, 'thread'):
+            self.thread.quit()
+            self.thread.wait()
+
+        # result = QWidget()
+        # vlayout = QVBoxLayout(result)
+        # hlayout = QHBoxLayout()
+        # player1 = QtMediaPlayerWidget(self.video_path, self)
+        # player2 = QtMediaPlayerWidget(interpolated_path, self)
+        # hlayout.addWidget(player1)
+        # hlayout.addWidget(player2)
+        # vlayout.addLayout(hlayout)
+
+        # # Sliders de volume
+        # volume_slider_layout = QHBoxLayout()
+        # volume_slider_column1 = QVBoxLayout()
+        # slider1_label = QLabel("Controle de Volume - Player 1")
+        # slider1_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        # volume_slider_column1.addWidget(slider1_label)
+
+        # slider_volume = QSlider(Qt.Horizontal)
+        # slider_volume.setRange(0, 100)
+        # slider_volume.setValue(50)  # valor inicial
+        # volume_slider_column1.addWidget(slider_volume)
+        # volume_slider_layout.addLayout(volume_slider_column1)
+
+        # volume_slider_column2 = QVBoxLayout()
+        # slider2_label = QLabel("Controle de Volume - Player 2")
+        # slider2_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        # volume_slider_column2.addWidget(slider2_label)
+
+        # slider_volume2 = QSlider(Qt.Horizontal)
+        # slider_volume2.setRange(0, 100)
+        # slider_volume2.setValue(50)  # valor inicial
+        # volume_slider_column2.addWidget(slider_volume2)
+        # volume_slider_layout.addLayout(volume_slider_column2)
+
+        # vlayout.addLayout(volume_slider_layout)
+
+        # def slider_volume_moved1(value):
+        #     player1.media_player.setVolume(value)
+
+        # def slider_volume_moved2(value):
+        #     player2.media_player.setVolume(value)
+
+        # slider_volume.valueChanged.connect(slider_volume_moved1)
+        # slider_volume2.valueChanged.connect(slider_volume_moved2)
+
+        # # Slider de tempo
+        # time_layout = QHBoxLayout()
+        # time_column = QVBoxLayout()
+        # time_label = QLabel("Controle de Tempo")
+        # time_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        # time_column.addWidget(time_label)
+
+        # slider = QSlider(Qt.Horizontal)
+        # slider.setRange(0, 0)
+        # time_column.addWidget(slider)
+        # time_layout.addLayout(time_column)
+
+        # def sync_slider():
+        #     duration = min(player1.duration(), player2.duration())
+        #     slider.setRange(0, duration)
+        #     slider.setValue(min(player1.position(), player2.position()))
+
+        # def slider_moved(value):
+        #     player1.set_position(value)
+        #     player2.set_position(value)
+
+        # player1.media_player.positionChanged.connect(sync_slider)
+        # player2.media_player.positionChanged.connect(sync_slider)
+        # slider.sliderMoved.connect(slider_moved)
+
+        # buttons_row = QHBoxLayout()
+        # btn_play = QPushButton("Play Ambos")
+        # btn_play.setIcon(QIcon("./assets/play_icon.png"))  # Adicione um ícone de play
+        # btn_play.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 9px;")
+        # btn_play.setFont(QFont("Helvetica", 11, QFont.Medium))
+        # btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        # btn_play.clicked.connect(lambda: (player1.play(), player2.play()))
+
+        # btn_pause = QPushButton("Pause Ambos")
+        # btn_pause.setIcon(QIcon("./assets/pause_icon.png"))  # Adicione um ícone de pause
+        # btn_pause.setStyleSheet("color: #2b7fff; border-radius: 4px; padding: 8px; border: 1px solid #2b7fff;")
+        # btn_pause.setFont(QFont("Helvetica", 11, QFont.Medium))
+        # btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
+        # btn_pause.clicked.connect(lambda: (player1.pause(), player2.pause()))
+
+        # buttons_row.addWidget(btn_play)
+        # buttons_row.addWidget(btn_pause)
+
+        # time_layout.addLayout(buttons_row)
+        # vlayout.addLayout(time_layout)
+
+        # self.opacity_effect.setOpacity(1.0)
+        # self.btn_interp.setGraphicsEffect(self.opacity_effect)
+        # self.btn_interp.setEnabled(True)        
+        # self.tabs.addTab(result, "Apuração")
+        # self.tabs.setCurrentWidget(result)
 
     def closeEvent(self, event):
         self.cancel_interpolation()  
@@ -672,3 +778,7 @@ if __name__ == "__main__":
         window = MainWindow()
         window.show()
         sys.exit(app.exec_())
+
+
+
+
