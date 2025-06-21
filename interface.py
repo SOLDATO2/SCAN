@@ -450,6 +450,7 @@ class MainWindow(QMainWindow):
         self.btn_interp.setMinimumWidth(240)
         self.btn_interp.setCursor(Qt.CursorShape.PointingHandCursor)
         # self.btn_interp.clicked.connect(self.start_interpolation)
+        # self.btn_interp.clicked.connect(self.start_interpolation)
         btn_interp_container.addWidget(self.btn_interp)
         btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         last_section.addLayout(btn_interp_container)
