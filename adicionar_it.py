@@ -27,8 +27,10 @@ parser.add_argument("--reload", action="store_true", help="Ativar hot reloading"
 # Torna os argumentos acessíveis de outros arquivos
 args = parser.parse_args()
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"[Info] Dispositivo: {device}")
+def get_device():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[Info] Dispositivo: {device}")
+    return device
 
 # Exemplo de exportação para uso externo
 def get_args():
@@ -107,6 +109,8 @@ def main():
     output_dir = os.path.join(os.getcwd(), "output")
     os.makedirs(output_dir, exist_ok=True)
     output_video_path = os.path.join(output_dir, "video_interpolado.mp4")
+
+    device = get_device()
 
     # carrega modelo
     print(f"[Info] Carregando modelo de '{model_path}'...")

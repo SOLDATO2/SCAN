@@ -106,7 +106,7 @@ class InterpolationThread(QThread):
         self.output_path = output_path
 
     def run(self):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = adicionar_it.get_device()
         model = adicionar_it.SCAN_EncDec(nf_start=32).to(device)
         ckpt = torch.load(self.model_path, map_location=device)
         sd = ckpt.get("model_state_dict", ckpt)
