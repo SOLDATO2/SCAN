@@ -93,7 +93,6 @@ class QtMediaPlayerWidget(QWidget):
     def position(self):
         return self.media_player.position()
 
-
 class InterpolationThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str, float)
@@ -284,26 +283,29 @@ class AnimatedProgressBar(QProgressBar):
             text = f"{self.value() if self.value() >= 0 else 0}%"
             painter.drawText(rect, Qt.AlignCenter, text)
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
-        self.resize(1000, 800)
-        self.setAcceptDrops(True)
-        self.opacity_effect = QGraphicsOpacityEffect()
-        # TODO: Trocar por um ícone mais apropriado
-        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
+class CfgLayout(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
-        self.tabs = QTabWidget()
-        self.setCentralWidget(self.tabs)
-
-        cfg = QWidget()
-        layout = QVBoxLayout(cfg)
+        layout = QVBoxLayout(self)
         layout.setSpacing(8)
         layout.setContentsMargins(16, 32, 16, 24)
 
-        # Seção modelo
         self.model_path = None
+        model_box = self.model_layout()
+        layout.addLayout(model_box)
+
+        self.video_path = None
+        video_box = self.video_layout()
+        layout.addLayout(video_box)
+
+        output_box = self.exit_directory_layout()
+        layout.addLayout(output_box)
+
+        last_section = self.button_section_layout()
+        layout.addLayout(last_section)
+
+    def model_layout(self):
         model_box = QVBoxLayout()
         model_box.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -321,10 +323,9 @@ class MainWindow(QMainWindow):
         btn1.clicked.connect(lambda: self.select_model(btn1))
         model_box.addWidget(btn1)
 
-        layout.addLayout(model_box)
-
-        # Seção vídeo de entrada
-        self.video_path = None
+        return model_box
+    
+    def video_layout(self):
         video_box = QVBoxLayout()
         video_box.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         video_box.setSpacing(8)
@@ -364,9 +365,9 @@ class MainWindow(QMainWindow):
         h4.addWidget(self.spin)
         video_box.addLayout(h4)
 
-        layout.addLayout(video_box)
+        return video_box
 
-        # Seção saída
+    def exit_directory_layout(self):
         h3 = QVBoxLayout()
         h3.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         h3label = QLabel("Diretório de Saída")
@@ -426,9 +427,10 @@ class MainWindow(QMainWindow):
 
         h3.addLayout(h3_row)
         h3.addLayout(h_res)
-        layout.addLayout(h3)
 
-        # Botão iniciar e progresso
+        return h3
+    
+    def button_section_layout(self):
         last_section = QVBoxLayout()
         last_section.setSpacing(16)
         last_section.setContentsMargins(0, 16, 0, 0)
@@ -438,7 +440,6 @@ class MainWindow(QMainWindow):
         self.btn_interp.setFont(QFont("Helvetica", 12))
         self.btn_interp.setMinimumWidth(240)
         self.btn_interp.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_interp.clicked.connect(self.start_interpolation)
         btn_interp_container.addWidget(self.btn_interp)
         btn_interp_container.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         last_section.addLayout(btn_interp_container)
@@ -448,9 +449,7 @@ class MainWindow(QMainWindow):
 
         last_section.addWidget(self.progress)
 
-        layout.addLayout(last_section)
-
-        self.tabs.addTab(cfg, "Configurações")
+        return last_section
 
     def select_model(self, button):
         path, _ = QFileDialog.getOpenFileName(self, "Selecione o modelo", "", "Pytorch (*.pth *.tar)")
@@ -495,28 +494,50 @@ class MainWindow(QMainWindow):
         if path:
             self.output_path.setText(path)
 
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
+        self.resize(1000, 800)
+        self.setAcceptDrops(True)
+        self.opacity_effect = QGraphicsOpacityEffect()
+        # TODO: Trocar por um ícone mais apropriado
+        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
+
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        cfg = CfgLayout(self)
+
+        self.tabs.addTab(cfg, "Configurações")
+
+        self.cfg = cfg
+        cfg.btn_interp.clicked.connect(self.start_interpolation)
+
+
     def start_interpolation(self):
-        if not os.path.isfile(self.model_path) or not os.path.isfile(self.video_path):
+        if not os.path.isfile(self.cfg.model_path) or not os.path.isfile(self.cfg.video_path):
             QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
             return
-        if not self.output_path.text().strip():
+        if not self.cfg.output_path.text().strip():
             QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
             return
 
         self.opacity_effect.setOpacity(0.5)
-        self.btn_interp.setGraphicsEffect(self.opacity_effect)
-        self.btn_interp.setEnabled(False)
+        self.cfg.btn_interp.setGraphicsEffect(self.opacity_effect)
+        self.cfg.btn_interp.setEnabled(False)
         self.thread = InterpolationThread(
-            self.model_path,
-            self.video_path,
-            self.spin.value(),
-            self.output_path.text().strip()
+            self.cfg.model_path,
+            self.cfg.video_path,
+            self.cfg.spin.value(),
+            self.cfg.output_path.text().strip()
         )
-        self.thread.progress.connect(self.progress.setValue)
+        self.thread.progress.connect(self.cfg.progress.setValue)
         self.thread.finished.connect(self.on_finished)
         self.thread.start()
 
-        self.progress.setHidden(False)
+        self.cfg.progress.setHidden(False)
 
     def on_finished(self, interpolated_path):
         if hasattr(self, 'thread'):
