@@ -494,60 +494,13 @@ class CfgLayout(QWidget):
         if path:
             self.output_path.setText(path)
 
-
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
-        self.resize(1000, 800)
-        self.setAcceptDrops(True)
-        self.opacity_effect = QGraphicsOpacityEffect()
-        # TODO: Trocar por um ícone mais apropriado
-        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
-
-        self.tabs = QTabWidget()
-        self.setCentralWidget(self.tabs)
-
-        cfg = CfgLayout(self)
-
-        self.tabs.addTab(cfg, "Configurações")
-
-        self.cfg = cfg
-        cfg.btn_interp.clicked.connect(self.start_interpolation)
-
-
-    def start_interpolation(self):
-        if not os.path.isfile(self.cfg.model_path) or not os.path.isfile(self.cfg.video_path):
-            QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
-            return
-        if not self.cfg.output_path.text().strip():
-            QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
-            return
-
-        self.opacity_effect.setOpacity(0.5)
-        self.cfg.btn_interp.setGraphicsEffect(self.opacity_effect)
-        self.cfg.btn_interp.setEnabled(False)
-        self.thread = InterpolationThread(
-            self.cfg.model_path,
-            self.cfg.video_path,
-            self.cfg.spin.value(),
-            self.cfg.output_path.text().strip()
-        )
-        self.thread.progress.connect(self.cfg.progress.setValue)
-        self.thread.finished.connect(self.on_finished)
-        self.thread.start()
-
-        self.cfg.progress.setHidden(False)
-
-    def on_finished(self, interpolated_path):
-        if hasattr(self, 'thread'):
-            self.thread.quit()
-            self.thread.wait()
-
-        result = QWidget()
-        vlayout = QVBoxLayout(result)
+class Resultlayout(QWidget):
+    def __init__(self, parent=None, video_path="", interpolated_path=""):
+        super().__init__(parent)
+        
+        vlayout = QVBoxLayout(self)
         hlayout = QHBoxLayout()
-        player1 = QtMediaPlayerWidget(self.video_path, self)
+        player1 = QtMediaPlayerWidget(video_path, self)
         player2 = QtMediaPlayerWidget(interpolated_path, self)
         hlayout.addWidget(player1)
         hlayout.addWidget(player2)
@@ -633,6 +586,58 @@ class MainWindow(QMainWindow):
 
         time_layout.addLayout(buttons_row)
         vlayout.addLayout(time_layout)
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Interpolação de Vídeo – SCAN_EncDec")
+        self.resize(1000, 800)
+        self.setAcceptDrops(True)
+        self.opacity_effect = QGraphicsOpacityEffect()
+        # TODO: Trocar por um ícone mais apropriado
+        self.setWindowIcon(QIcon("./assets/3-d-cube.svg"))
+
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        cfg = CfgLayout(self)
+
+        self.tabs.addTab(cfg, "Configurações")
+
+        self.cfg = cfg
+        cfg.btn_interp.clicked.connect(self.start_interpolation)
+
+
+    def start_interpolation(self):
+        if not os.path.isfile(self.cfg.model_path) or not os.path.isfile(self.cfg.video_path):
+            QMessageBox.warning(self, "Erro", "Modelo ou vídeo inválido.")
+            return
+        if not self.cfg.output_path.text().strip():
+            QMessageBox.warning(self, "Erro", "Especifique o arquivo de saída.")
+            return
+
+        self.opacity_effect.setOpacity(0.5)
+        self.cfg.btn_interp.setGraphicsEffect(self.opacity_effect)
+        self.cfg.btn_interp.setEnabled(False)
+        self.thread = InterpolationThread(
+            self.cfg.model_path,
+            self.cfg.video_path,
+            self.cfg.spin.value(),
+            self.cfg.output_path.text().strip()
+        )
+        self.thread.progress.connect(self.cfg.progress.setValue)
+        self.thread.finished.connect(self.on_finished)
+        self.thread.start()
+
+        self.cfg.progress.setHidden(False)
+
+    def on_finished(self, interpolated_path):
+        if hasattr(self, 'thread'):
+            self.thread.quit()
+            self.thread.wait()
+
+
+        result = Resultlayout(self, self.cfg.video_path, interpolated_path)
 
         self.opacity_effect.setOpacity(1.0)
         self.btn_interp.setGraphicsEffect(self.opacity_effect)
