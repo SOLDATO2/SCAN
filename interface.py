@@ -23,6 +23,7 @@ import time
 
 # importa suas funções de interpolação
 import adicionar_it
+import platform
 
 SPINBOX_STYLE: Final[str] = """
     QSpinBox {
@@ -144,25 +145,74 @@ class InterpolationThread(QThread):
 
         adicionar_it.create_video(new_frames, self.output_path, out_fps)
 
-        if include_audio:
-            tmp = self.output_path + ".tmp.mp4"
+        # verifica se o arquivo de origem possui stream de áudio (usando ffprobe)
+        def _has_audio(path):
+            try:
+                p = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False
+                )
+                return bool(p.stdout.strip())
+            except Exception:
+                return False
+
+        has_audio_src = _has_audio(self.video_path)
+        include_audio = include_audio and has_audio_src
+
+        # se for possível incluir áudio, mapeia o áudio do vídeo original.
+        # usamos "1:a:0?" para que o ffmpeg não quebre caso o stream esteja ausente.
+        tmp = self.output_path + ".tmp.mp4"
+
+        # Primeiro, tentamos re-encodar para H.264 yuv420p (mais compatível com Qt/GStreamer)
+        try:
             cmd = [
                 "ffmpeg", "-y",
                 "-i", self.output_path,
                 "-i", self.video_path,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-map", "0:v:0",
-                "-map", "1:a:0",
-                "-shortest", tmp
+                "-map", "0:v:0"
             ]
+            if include_audio:
+                cmd += ["-map", "1:a:0?", "-c:a", "aac"]
+            else:
+                cmd += ["-an"]
+
+            cmd += [
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-shortest",
+                tmp
+            ]
+
             subprocess.run(cmd, check=True)
-            os.replace(tmp, self.output_path)
+        except subprocess.CalledProcessError:
+            # Se re-encode falhar, tenta fallback com copy (como estava antes)
+            fallback = [
+                "ffmpeg", "-y",
+                "-i", self.output_path,
+                "-i", self.video_path,
+                "-c:v", "copy"
+            ]
+            if include_audio:
+                fallback += ["-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest", tmp]
+            else:
+                fallback += ["-map", "0:v:0", "-an", "-shortest", tmp]
+
+            subprocess.run(fallback, check=True)
+
+        os.replace(tmp, self.output_path)
+
+        # garante que o arquivo está totalmente pronto antes de abrir no player
+        time.sleep(0.25)
 
         self.progress.emit(100)
         self.finished.emit(self.output_path, out_fps)
 
 class DraggableButton(QPushButton):
+    # sinal que emite o caminho do primeiro arquivo arrastado
+    fileDropped = pyqtSignal(str)
+
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.setAcceptDrops(True)
@@ -182,9 +232,14 @@ class DraggableButton(QPushButton):
         if event.mimeData().hasUrls():
             files = [u.toLocalFile() for u in event.mimeData().urls()]
             if files:  # Se houver arquivos, use o primeiro
-                self.parent().model_path = files[0]  # Atualiza o caminho do modelo
                 filename = QFileInfo(files[0]).fileName()
                 self.setText(filename)  # Atualiza o texto do botão com o caminho do arquivo
+
+                 # emite sinais para que seja possível conectar handlers externamente
+                try:
+                    self.fileDropped.emit(files[0])
+                except Exception:
+                    pass
 
 class AnimatedProgressBar(QProgressBar):
     def __init__(self, parent=None):
@@ -321,6 +376,7 @@ class CfgLayout(QWidget):
 
         btn1 = DraggableButton("Arraste ou clique para selecionar o modelo (.pth, .tar)", self)       
         btn1.clicked.connect(lambda: self.select_model(btn1))
+        btn1.fileDropped.connect(lambda path: (setattr(self, 'model_path', path), btn1.setText(QFileInfo(path).fileName())))
         model_box.addWidget(btn1)
 
         return model_box
@@ -342,6 +398,7 @@ class CfgLayout(QWidget):
 
         btn2 = DraggableButton("Arraste ou clique para selecionar o vídeo (.mp4, .avi, .mov)", self)
         btn2.clicked.connect(lambda: self.select_video(btn2))
+        btn2.fileDropped.connect(lambda path: (setattr(self, 'video_path', path), self.update_video_info(path, btn2)))
         
         video_box.addWidget(btn2)
         
@@ -461,6 +518,10 @@ class CfgLayout(QWidget):
     def select_video(self, button):
         path, _ = QFileDialog.getOpenFileName(self, "Selecione o vídeo", "", "Vídeos (*.mp4 *.avi *.mov)")
         if path:
+            self.update_video_info(path, button)
+    
+    def update_video_info(self, path, button):
+         if path:
             self.video_path = path
             cap = cv2.VideoCapture(path)
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -640,8 +701,8 @@ class MainWindow(QMainWindow):
         result = Resultlayout(self, self.cfg.video_path, interpolated_path)
 
         self.opacity_effect.setOpacity(1.0)
-        self.btn_interp.setGraphicsEffect(self.opacity_effect)
-        self.btn_interp.setEnabled(True)        
+        self.cfg.btn_interp.setGraphicsEffect(self.opacity_effect)
+        self.cfg.btn_interp.setEnabled(True)        
         self.tabs.addTab(result, "Apuração")
         self.tabs.setCurrentWidget(result)
 
@@ -694,6 +755,23 @@ if __name__ == "__main__":
     if(args.reload):
         enable_hot_reload()
     else:
+        # defina variáveis de ambiente ANTES de criar QApplication
+        is_linux = platform.system() == "Linux"
+        is_ubuntu = False
+        if is_linux:
+            try:
+                with open("/etc/os-release", "r") as f:
+                    os_release = f.read().lower()
+                if "ubuntu" in os_release:
+                    is_ubuntu = True
+            except Exception:
+                is_ubuntu = False
+
+        if is_linux and is_ubuntu:
+            os.environ["LIBVA_DRIVER_NAME"] = "i965"   # ou "iHD"
+            os.environ["QT_OPENGL"] = "software"
+            os.environ["QT_QPA_PLATFORM"] = "xcb"
+
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
