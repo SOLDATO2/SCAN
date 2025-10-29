@@ -3,3 +3,5 @@ model/generated_data/checkpoint_test.pth
 model/generated_data/loss_history_test.pkl
 output
 .venv
+dist
+build
