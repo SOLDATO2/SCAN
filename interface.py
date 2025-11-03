@@ -145,66 +145,20 @@ class InterpolationThread(QThread):
 
         adicionar_it.create_video(new_frames, self.output_path, out_fps)
 
-        # verifica se o arquivo de origem possui stream de áudio (usando ffprobe)
-        def _has_audio(path):
-            try:
-                p = subprocess.run(
-                    ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False
-                )
-                return bool(p.stdout.strip())
-            except Exception:
-                return False
-
-        has_audio_src = _has_audio(self.video_path)
-        include_audio = include_audio and has_audio_src
-
-        # se for possível incluir áudio, mapeia o áudio do vídeo original.
-        # usamos "1:a:0?" para que o ffmpeg não quebre caso o stream esteja ausente.
-        tmp = self.output_path + ".tmp.mp4"
-
-        # Primeiro, tentamos re-encodar para H.264 yuv420p (mais compatível com Qt/GStreamer)
-        try:
+        if include_audio:
+            tmp = self.output_path + ".tmp.mp4"
             cmd = [
                 "ffmpeg", "-y",
                 "-i", self.output_path,
                 "-i", self.video_path,
-                "-map", "0:v:0"
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-shortest", tmp
             ]
-            if include_audio:
-                cmd += ["-map", "1:a:0?", "-c:a", "aac"]
-            else:
-                cmd += ["-an"]
-
-            cmd += [
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "18",
-                "-pix_fmt", "yuv420p",
-                "-shortest",
-                tmp
-            ]
-
             subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError:
-            # Se re-encode falhar, tenta fallback com copy (como estava antes)
-            fallback = [
-                "ffmpeg", "-y",
-                "-i", self.output_path,
-                "-i", self.video_path,
-                "-c:v", "copy"
-            ]
-            if include_audio:
-                fallback += ["-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest", tmp]
-            else:
-                fallback += ["-map", "0:v:0", "-an", "-shortest", tmp]
-
-            subprocess.run(fallback, check=True)
-
-        os.replace(tmp, self.output_path)
-
-        # garante que o arquivo está totalmente pronto antes de abrir no player
-        time.sleep(0.25)
+            os.replace(tmp, self.output_path)
 
         self.progress.emit(100)
         self.finished.emit(self.output_path, out_fps)
