@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
 Jinja2==3.1.6
 matplotlib==3.10.1
 numpy==2.2.6
