@@ -65,16 +65,47 @@ class QtMediaPlayerWidget(QWidget):
     def __init__(self, video_path, parent=None):
         super().__init__(parent)
 
-        self.media_player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
-        video_widget = QVideoWidget()
-        video_widget.setMinimumSize(640, 480)
+        self.media_player = QMediaPlayer(self, QMediaPlayer.VideoSurface)
+        self.video_widget = QVideoWidget()
+        self.video_widget.setMinimumSize(640, 480)
 
         layout = QVBoxLayout()
-        layout.addWidget(video_widget)
+        layout.addWidget(self.video_widget)
         self.setLayout(layout)
 
-        self.media_player.setVideoOutput(video_widget)
+        self.media_player.setVideoOutput(self.video_widget)
         self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(video_path)))
+
+        # Conectar sinais para garantir que o primeiro frame seja desenhado
+        self.media_player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self.media_player.videoAvailableChanged.connect(self._on_video_available_changed)
+        self.media_player.error.connect(lambda: print("QMediaPlayer error:", self.media_player.errorString()))
+
+        # pequeno timer para forçar preload (backup)
+        QTimer.singleShot(50, lambda: self._force_render_first_frame())
+
+    def _on_media_status_changed(self, status):
+        # quando o media estiver carregado/buffered, seek e forçar render
+        if status in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia):
+            QTimer.singleShot(10, lambda: self.media_player.setPosition(0))
+            QTimer.singleShot(40, self._force_render_first_frame)
+
+    def _on_video_available_changed(self, available):
+        if available:
+            QTimer.singleShot(20, self._force_render_first_frame)
+
+    def _force_render_first_frame(self):
+        # faz um play curto (mudo) e pausa para garantir pintura do primeiro frame
+        try:
+            if self.media_player.state() != QMediaPlayer.PlayingState:
+                self.media_player.setMuted(True)
+                self.media_player.play()
+                QTimer.singleShot(60, lambda: (self.media_player.pause(), self.media_player.setPosition(0), self.media_player.setMuted(False)))
+            else:
+                self.media_player.pause()
+                self.media_player.setPosition(0)
+        except Exception as e:
+            print("Erro ao forçar render:", e)
 
     def play(self):
         self.media_player.play()
@@ -287,7 +318,7 @@ class AnimatedProgressBar(QProgressBar):
 
         # Texto centralizado (apenas se não for indeterminado)
         if not (self.minimum() == 0 and self.maximum() == 0):
-            painter.setPen(QColor("white" if self.value() > 50 else "#2b7fff"))
+            painter.setPen(QColor("white" if self.value() > 48 else "#2b7fff"))
             painter.setFont(QFont("Helvetica", 14, QFont.Medium))
             text = f"{self.value() if self.value() >= 0 else 0}%"
             painter.drawText(rect, Qt.AlignCenter, text)
@@ -530,7 +561,7 @@ class Resultlayout(QWidget):
 
         slider_volume = QSlider(Qt.Horizontal)
         slider_volume.setRange(0, 100)
-        slider_volume.setValue(50)  # valor inicial
+        slider_volume.setValue(30)  # valor inicial
         volume_slider_column1.addWidget(slider_volume)
         volume_slider_layout.addLayout(volume_slider_column1)
 
@@ -541,7 +572,7 @@ class Resultlayout(QWidget):
 
         slider_volume2 = QSlider(Qt.Horizontal)
         slider_volume2.setRange(0, 100)
-        slider_volume2.setValue(50)  # valor inicial
+        slider_volume2.setValue(30)  # valor inicial
         volume_slider_column2.addWidget(slider_volume2)
         volume_slider_layout.addLayout(volume_slider_column2)
 
@@ -650,7 +681,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'thread'):
             self.thread.quit()
             self.thread.wait()
-
 
         result = Resultlayout(self, self.cfg.video_path, interpolated_path)
 
