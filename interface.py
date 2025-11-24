@@ -552,27 +552,40 @@ class Resultlayout(QWidget):
         hlayout.addWidget(player2)
         vlayout.addLayout(hlayout)
 
-        # Sliders de volume
+        # Sliders de volume (layout com margens reduzidas para evitar espaçamento extra)
         volume_slider_layout = QHBoxLayout()
+        volume_slider_layout.setContentsMargins(0, 0, 0, 0)
+        volume_slider_layout.setSpacing(40)  # espaço horizontal entre os dois blocos; ajuste se quiser
+
         volume_slider_column1 = QVBoxLayout()
+        volume_slider_column1.setContentsMargins(0, 0, 0, 0)
+        volume_slider_column1.setSpacing(6)  # reduz o espaço entre label e slider
         slider1_label = QLabel("Controle de Volume - Player 1")
         slider1_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        slider1_label.setContentsMargins(0, 0, 0, 0)
+        slider1_label.setFixedHeight(20)  # evita que o label aumente verticalmente
         volume_slider_column1.addWidget(slider1_label)
 
         slider_volume = QSlider(Qt.Horizontal)
         slider_volume.setRange(0, 100)
         slider_volume.setValue(30)  # valor inicial
+        slider_volume.setFixedHeight(20)  # mantém o slider compacto verticalmente
         volume_slider_column1.addWidget(slider_volume)
         volume_slider_layout.addLayout(volume_slider_column1)
 
         volume_slider_column2 = QVBoxLayout()
+        volume_slider_column2.setContentsMargins(0, 0, 0, 0)
+        volume_slider_column2.setSpacing(6)
         slider2_label = QLabel("Controle de Volume - Player 2")
         slider2_label.setFont(QFont("Helvetica", 12, QFont.Light))
+        slider2_label.setContentsMargins(0, 0, 0, 0)
+        slider2_label.setFixedHeight(20)
         volume_slider_column2.addWidget(slider2_label)
 
         slider_volume2 = QSlider(Qt.Horizontal)
         slider_volume2.setRange(0, 100)
-        slider_volume2.setValue(30)  # valor inicial
+        slider_volume2.setValue(30)
+        slider_volume2.setFixedHeight(20)
         volume_slider_column2.addWidget(slider_volume2)
         volume_slider_layout.addLayout(volume_slider_column2)
 
@@ -607,6 +620,22 @@ class Resultlayout(QWidget):
         def slider_moved(value):
             player1.set_position(value)
             player2.set_position(value)
+        
+        def handle_play():
+            if(btn_play.isPaused):
+                player1.play()
+                player2.play()
+                btn_play.setText("Pause")
+                btn_play.setIcon(QIcon("./assets/pause_icon.png"))
+                btn_play.setStyleSheet("color: #2b7fff; border-radius: 4px; padding: 8px; border: 1px solid #2b7fff;")
+                btn_play.isPaused = False
+            else:
+                player1.pause()
+                player2.pause()
+                btn_play.setText("Play")
+                btn_play.setIcon(QIcon("./assets/play_icon.png"))
+                btn_play.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 9px;")
+                btn_play.isPaused = True
 
         player1.media_player.positionChanged.connect(sync_slider)
         player2.media_player.positionChanged.connect(sync_slider)
@@ -614,24 +643,29 @@ class Resultlayout(QWidget):
 
         buttons_row = QHBoxLayout()
         btn_play = QPushButton("Play Ambos")
+        btn_play.isPaused = True
         btn_play.setIcon(QIcon("./assets/play_icon.png"))  # Adicione um ícone de play
         btn_play.setStyleSheet("background-color: #2b7fff; color: white; border-radius: 4px; padding: 9px;")
         btn_play.setFont(QFont("Helvetica", 11, QFont.Medium))
         btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_play.clicked.connect(lambda: (player1.play(), player2.play()))
+        btn_play.clicked.connect(handle_play)
 
-        btn_pause = QPushButton("Pause Ambos")
-        btn_pause.setIcon(QIcon("./assets/pause_icon.png"))  # Adicione um ícone de pause
-        btn_pause.setStyleSheet("color: #2b7fff; border-radius: 4px; padding: 8px; border: 1px solid #2b7fff;")
-        btn_pause.setFont(QFont("Helvetica", 11, QFont.Medium))
-        btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_pause.clicked.connect(lambda: (player1.pause(), player2.pause()))
+        # btn_pause = QPushButton("Pause Ambos")
+        # btn_pause.setIcon(QIcon("./assets/pause_icon.png"))  # Adicione um ícone de pause
+        # btn_pause.setStyleSheet("color: #2b7fff; border-radius: 4px; padding: 8px; border: 1px solid #2b7fff;")
+        # btn_pause.setFont(QFont("Helvetica", 11, QFont.Medium))
+        # btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
+        # btn_pause.clicked.connect(lambda: (player1.pause(), player2.pause()))
 
         buttons_row.addWidget(btn_play)
-        buttons_row.addWidget(btn_pause)
+        # buttons_row.addWidget(btn_pause)
 
         time_layout.addLayout(buttons_row)
         vlayout.addLayout(time_layout)
+
+       
+
+        
 
 class MainWindow(QMainWindow):
     def __init__(self):
